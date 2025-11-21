@@ -1,24 +1,24 @@
 Model Analyzed: Voting Classifier
-Total Misclassified: 912
+Total Misclassified: 8
 
 --- Top Confused Pairs ---
-24 times: True='Impetigo' -> Pred='Pneumonia'
-24 times: True='Allergy' -> Pred='Drug Reaction'
-24 times: True='GERD' -> Pred='Chicken pox'
+1 times: True='Paralysis (brain hemorrhage)' -> Pred='Peptic ulcer diseae'
+1 times: True='Hepatitis C' -> Pred='Chronic cholestasis'
+1 times: True='Gastroenteritis' -> Pred='Paralysis (brain hemorrhage)'
 
 --- Detailed Cases ---
-True: GERD -> Pred: Chicken pox
-Symptoms: ['stomach_pain', 'acidity', 'ulcers_on_tongue', 'vomiting', 'weight_gain', 'cough', 'runny_nose', 'chest_pain']
+True: Fungal infection -> Pred: AIDS
+Symptoms: ['nodal_skin_eruptions', 'muscle_wasting', 'high_fever', 'swollen_extremeties', 'dischromic _patches']
 
-True: Arthritis -> Pred: Peptic ulcer diseae
-Symptoms: ['sunken_eyes', 'swelling_of_stomach', 'blurred_and_distorted_vision', 'brittle_nails', 'muscle_weakness', 'swelling_joints', 'movement_stiffness', 'painful_walking', 'silver_like_dusting']
+True: Hepatitis C -> Pred: Chronic cholestasis
+Symptoms: ['itching', 'vomiting', 'yellowish_skin', 'dark_urine', 'nausea', 'loss_of_appetite', 'yellowing_of_eyes', 'bloody_stool', 'neck_pain', 'knee_pain', 'family_history']
 
-True: Jaundice -> Pred: Dimorphic hemmorhoids(piles)
-Symptoms: ['itching', 'shivering', 'vomiting', 'burning_micturition', 'fatigue', 'weight_loss', 'high_fever', 'yellowish_skin', 'nausea', 'abdominal_pain', 'fluid_overload', 'runny_nose', 'enlarged_thyroid', 'belly_pain', 'lack_of_concentration']
+True: Gastroenteritis -> Pred: Arthritis
+Symptoms: ['sunken_eyes', 'dehydration', 'swollen_legs', 'slurred_speech', 'movement_stiffness', 'belly_pain', 'dischromic _patches', 'visual_disturbances', 'history_of_alcohol_consumption', 'painful_walking']
 
-True: Heart attack -> Pred: Typhoid
-Symptoms: ['vomiting', 'mood_swings', 'breathlessness', 'sweating', 'malaise', 'phlegm', 'chest_pain', 'visual_disturbances', 'palpitations']
+True: Chronic cholestasis -> Pred: Hepatitis C
+Symptoms: ['itching', 'acidity', 'ulcers_on_tongue', 'high_fever', 'sunken_eyes', 'breathlessness', 'dehydration', 'yellowish_skin', 'nausea', 'loss_of_appetite', 'yellowing_of_eyes', 'red_spots_over_body', 'watering_from_eyes', 'polyuria', 'family_history']
 
-True: AIDS -> Pred: Allergy
-Symptoms: ['muscle_wasting', 'patches_in_throat', 'high_fever', 'dark_urine', 'diarrhoea', 'chest_pain', 'foul_smell_of urine', 'passage_of_gases']
+True: Chronic cholestasis -> Pred: (vertigo) Paroymsal  Positional Vertigo
+Symptoms: ['itching', 'vomiting', 'weight_loss', 'nausea', 'back_pain', 'constipation', 'yellowing_of_eyes', 'loss_of_balance', 'coma']
 
