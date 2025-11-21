@@ -1,0 +1,24 @@
+Model Analyzed: Voting Classifier
+Total Misclassified: 912
+
+--- Top Confused Pairs ---
+24 times: True='Impetigo' -> Pred='Pneumonia'
+24 times: True='Allergy' -> Pred='Drug Reaction'
+24 times: True='GERD' -> Pred='Chicken pox'
+
+--- Detailed Cases ---
+True: GERD -> Pred: Chicken pox
+Symptoms: ['stomach_pain', 'acidity', 'ulcers_on_tongue', 'vomiting', 'weight_gain', 'cough', 'runny_nose', 'chest_pain']
+
+True: Arthritis -> Pred: Peptic ulcer diseae
+Symptoms: ['sunken_eyes', 'swelling_of_stomach', 'blurred_and_distorted_vision', 'brittle_nails', 'muscle_weakness', 'swelling_joints', 'movement_stiffness', 'painful_walking', 'silver_like_dusting']
+
+True: Jaundice -> Pred: Dimorphic hemmorhoids(piles)
+Symptoms: ['itching', 'shivering', 'vomiting', 'burning_micturition', 'fatigue', 'weight_loss', 'high_fever', 'yellowish_skin', 'nausea', 'abdominal_pain', 'fluid_overload', 'runny_nose', 'enlarged_thyroid', 'belly_pain', 'lack_of_concentration']
+
+True: Heart attack -> Pred: Typhoid
+Symptoms: ['vomiting', 'mood_swings', 'breathlessness', 'sweating', 'malaise', 'phlegm', 'chest_pain', 'visual_disturbances', 'palpitations']
+
+True: AIDS -> Pred: Allergy
+Symptoms: ['muscle_wasting', 'patches_in_throat', 'high_fever', 'dark_urine', 'diarrhoea', 'chest_pain', 'foul_smell_of urine', 'passage_of_gases']
+

@@ -1,24 +1,39 @@
 import pandas as pd
-from sklearn.model_selection import train_test_split
-from sklearn.naive_bayes import GaussianNB
-from sklearn.tree import DecisionTreeClassifier
-from sklearn.ensemble import RandomForestClassifier, VotingClassifier
-from sklearn.svm import SVC
-from sklearn.metrics import accuracy_score, confusion_matrix
+import joblib  
+import os      
+import numpy as np
 
-# Import your custom model functions
+from sklearn.model_selection import train_test_split
+from sklearn.ensemble import VotingClassifier
+from sklearn.metrics import accuracy_score
+from sklearn.preprocessing import LabelEncoder
+
+# Import tuned model functions
 from models.knn_model import get_knn_model
 from models.naive_bayes_model import get_nb_model
 from models.dt_model import get_dt_model
 from models.rf_model import get_rf_model
 from models.svm_model import get_svm_model
 from models.logistic_model import get_logistic_model
+from models.xgb_model import get_xgb_model 
 
+# ----------------- Setup Configuration -----------------
+MODEL_DIR_MAIN = "saved_models_main"
+os.makedirs(MODEL_DIR_MAIN, exist_ok=True)
 
-# ----------------- Load Data -----------------
-df_train = pd.read_csv("Prototype.csv")
-df_test = pd.read_csv("Prototype.csv")
+model_paths = {
+    'KNN': os.path.join(MODEL_DIR_MAIN, 'knn.pkl'),
+    'Naive Bayes': os.path.join(MODEL_DIR_MAIN, 'nb.pkl'),
+    'Decision Tree': os.path.join(MODEL_DIR_MAIN, 'dt.pkl'),
+    'Random Forest': os.path.join(MODEL_DIR_MAIN, 'rf.pkl'),
+    'SVM': os.path.join(MODEL_DIR_MAIN, 'svm.pkl'),
+    'Logistic Regression': os.path.join(MODEL_DIR_MAIN, 'lr.pkl'),
+    'XGBoost': os.path.join(MODEL_DIR_MAIN, 'xgb.pkl')
+}
+voting_path = os.path.join(MODEL_DIR_MAIN, 'voting_clf.pkl')
 
+# ----------------- Define Feature & Label Schema -----------------
+# These lists ensure the model always sees features in the correct order.
 symptoms_list = [
     'itching','skin_rash','nodal_skin_eruptions','continuous_sneezing','shivering','chills','joint_pain',
     'stomach_pain','acidity','ulcers_on_tongue','muscle_wasting','vomiting','burning_micturition','spotting_ urination','fatigue',
@@ -51,81 +66,180 @@ diseases_list = [
     'Impetigo'
 ]
 
+# Remove accidental duplicates while preserving order
+seen = set()
+symptoms_list = [x for x in symptoms_list if not (x in seen or seen.add(x))]
 
-# Map disease names to numeric labels
-disease_mapping = {disease: i for i, disease in enumerate(diseases_list)}
-df_train['prognosis'] = df_train['prognosis'].map(disease_mapping)
-df_test['prognosis'] = df_test['prognosis'].map(disease_mapping)
+# Save valid symptom list for user reference
+with open("available_symptoms.txt", "w") as f:
+    f.write("\n".join(sorted(symptoms_list)))
 
-# Drop rows with unmapped diseases (NaN labels)
-df_train.dropna(subset=['prognosis'], inplace=True)
-df_test.dropna(subset=['prognosis'], inplace=True)
+print(f"--- Configuration Loaded: {len(symptoms_list)} Symptoms, {len(diseases_list)} Diseases ---")
 
-# Features and labels
-X_train = df_train[symptoms_list]
-y_train = df_train['prognosis'].astype(int)
+# ----------------- Data Loading & Preprocessing -----------------
+try:
+    df = pd.read_csv("Prototype.csv")
+except FileNotFoundError:
+    print("Error: 'Prototype.csv' not found. Please place it in the project directory.")
+    exit()
 
-X_test = df_test[symptoms_list]
-y_test = df_test['prognosis'].astype(int)
+# Prepare Labels
+# We use LabelEncoder to ensure classes are 0, 1, 2... which helps XGBoost avoid errors
+le = LabelEncoder()
+df['prognosis'] = le.fit_transform(df['prognosis'])
 
-# ----------------- Train ML Models -----------------
-models = {
-    'KNN': get_knn_model(X_train, y_train),
-    'Naive Bayes': get_nb_model(X_train, y_train),
-    'Decision Tree': get_dt_model(X_train, y_train),
-    'Random Forest': get_rf_model(X_train, y_train),
-    'SVM': get_svm_model(X_train, y_train),
-    'Logistic Regression': get_logistic_model(X_train, y_train)
+# Ensure we remove any rows with missing labels
+df.dropna(subset=['prognosis'], inplace=True)
+
+X = df[symptoms_list]
+y = df['prognosis'].astype(int)
+
+# Update our disease lookup list to match the encoder's order
+diseases_list = list(le.classes_)
+
+# Split Data: 80% for training models, 20% for evaluating performance
+X_train, X_test, y_train, y_test = train_test_split(
+    X, y, test_size=0.2, random_state=42, stratify=y
+)
+
+print(f"Data Loaded: {len(X_train)} training samples, {len(X_test)} testing samples.")
+
+# ----------------- Model Training -----------------
+print("\n--- initializing Model Training ---")
+
+models = {}
+model_getters = {
+    'KNN': get_knn_model,
+    'Naive Bayes': get_nb_model,
+    'Decision Tree': get_dt_model,
+    'Random Forest': get_rf_model,
+    'SVM': get_svm_model,
+    'Logistic Regression': get_logistic_model,
+    'XGBoost': get_xgb_model
 }
 
-# Evaluate models
-for name, model in models.items():
-    y_pred = model.predict(X_test)
+# Train each model individually and save it
+for name, getter_func in model_getters.items():
+    path = model_paths[name]
+    
+    if os.path.exists(path):
+        # Load existing model to save time
+        models[name] = joblib.load(path)
+    else:
+        # Train new model using our helper functions
+        print(f"Training {name}...")
+        model = getter_func(X_train, y_train) 
+        models[name] = model
+        joblib.dump(model, path) 
+    
+    # Quick accuracy check
+    y_pred = models[name].predict(X_test)
     acc = accuracy_score(y_test, y_pred) * 100
     print(f"{name} Accuracy: {acc:.2f}%")
 
-# ----------------- Soft Voting -----------------
-estimators = [(name, model) for name, model in models.items()]
-voting_clf = VotingClassifier(estimators=estimators, voting='soft')
-voting_clf.fit(X_train, y_train)
+
+# ----------------- Ensemble Learning (Voting) -----------------
+print("\n--- initializing Voting Ensemble ---")
+
+# We exclude XGBoost from the voting ensemble to keep it as a standalone benchmark
+estimators = [(name, model) for name, model in models.items() if name != 'XGBoost']
+
+# Weighted Voting Strategy:
+# We give Random Forest a weight of 5 because it proved most robust in our testing.
+# Order matches 'estimators': KNN, NB, DT, RF, SVM, LR
+weights = [1, 1, 1, 5, 1, 1] 
+
+if os.path.exists(voting_path):
+    voting_clf = joblib.load(voting_path)
+    print("Loaded existing Voting Classifier.")
+else:
+    print("Training Weighted Voting Classifier...")
+    voting_clf = VotingClassifier(estimators=estimators, voting='soft', weights=weights)
+    voting_clf.fit(X_train, y_train)
+    joblib.dump(voting_clf, voting_path)
+
+# Evaluate Ensemble
 y_pred = voting_clf.predict(X_test)
-print(f"Soft Voting Accuracy: {accuracy_score(y_test, y_pred)*100:.2f}%")
-
-voting_hard = VotingClassifier(estimators=estimators, voting='hard')
-voting_hard.fit(X_train, y_train)
-y_hard_pred = voting_hard.predict(X_test)
-print(f"Hard Voting Accuracy: {accuracy_score(y_test, y_hard_pred)*100:.2f}%")
+print(f"Ensemble Accuracy: {accuracy_score(y_test, y_pred)*100:.2f}%")
 
 
-def predict_disease(symptoms_input):
-    input_vector = [1 if symptom in symptoms_input else 0 for symptom in symptoms_list]
+# ----------------- Prediction Application -----------------
+def predict_disease(user_input_list):
+    """
+    Takes user input, cleans it, and predicts the disease using the Voting Classifier.
+    Also provides confidence scores and fallback logic.
+    """
+    # 1. Input Cleaning
+    valid_symptoms = []
+    ignored_symptoms = []
+    
+    for s in user_input_list:
+        # Standardize input to match dataset format (lowercase, underscores)
+        clean_s = s.strip().lower().replace(' ', '_').replace("'", "")
+        if clean_s in symptoms_list:
+            valid_symptoms.append(clean_s)
+        elif clean_s != "":
+            ignored_symptoms.append(clean_s)
+            
+    print(f"\n✅ Accepted Symptoms: {valid_symptoms}")
+    if ignored_symptoms:
+        print(f"⚠️ Ignored (Typo?): {ignored_symptoms}")
+
+    # 2. Safety Check
+    if len(valid_symptoms) < 3:
+        print("\n⚠️  WARNING: Low information. Please provide at least 3 valid symptoms.")
+        
+    # 3. Prepare Input Vector
+    input_vector = [1 if symptom in valid_symptoms else 0 for symptom in symptoms_list]
     input_df = pd.DataFrame([input_vector], columns=symptoms_list)
 
-    # Print prediction of each individual model
+    # 4. Individual Model Opinions
     print("\n--- Individual Model Predictions ---")
     for name, model in models.items():
         pred_label = model.predict(input_df)[0]
-        print(f"{name} predicts: {diseases_list[pred_label]}")
+        print(f"{name}: {diseases_list[pred_label]}")
 
-    # Voting predictions
-    soft_label = voting_clf.predict(input_df)[0]
-    hard_label = voting_hard.predict(input_df)[0]
-    print(f"\nPredicted Disease (Soft Voting): {diseases_list[soft_label]}")
-    print(f"Predicted Disease (Hard Voting): {diseases_list[hard_label]}")
+    # 5. Ensemble Prediction with Confidence
+    # Get probability scores for all diseases
+    probas = voting_clf.predict_proba(input_df)[0]
+    
+    # Find the top 3 matches
+    top3_indices = probas.argsort()[-3:][::-1]
+    
+    print(f"\n--- Ensemble Confidence (Soft Voting) ---")
+    for i in top3_indices:
+        disease = diseases_list[i]
+        score = probas[i]
+        if score > 0.01: # Only show meaningful probabilities
+            print(f"  {score*100:.1f}%: {disease}")
+
+    # 6. Final Decision
+    max_confidence = probas[top3_indices[0]]
+    final_disease = diseases_list[top3_indices[0]]
+
+    # Threshold: If confidence is too low, don't guess blindly
+    if max_confidence < 0.3:
+        print(f"\n>>> RESULT: Inconclusive.")
+        print(f"    The system is unsure ({max_confidence*100:.1f}%). Closest match: {final_disease}")
+    else:
+        print(f"\n>>> FINAL DIAGNOSIS: {final_disease} <<<")
 
 
-# ----------------- Main -----------------
+# ----------------- Interactive Loop -----------------
 if __name__ == "__main__":
-    print("\n================= Disease Prediction System =================")
-    print("Enter 5 symptoms separated by commas (or type 'exit' to quit)\n")
-
+    print("\n===============================================")
+    print("      AI Disease Prediction System v1.0")
+    print("===============================================")
+    print(f"Database: {len(diseases_list)} Diseases, {len(symptoms_list)} Symptoms.")
+    print("Tip: Check 'available_symptoms.txt' for correct spelling.")
+    
     while True:
-        user_input = input("\nEnter symptoms: ").strip()
-        if user_input.lower() in ["exit", "quit", "q"]:
-            print("\nExiting the program. Stay healthy! 🩺")
-            break
-
-        user_symptoms = [s.strip() for s in user_input.split(",")]
-        predicted_disease = predict_disease(user_symptoms)
-
+        print("\n" + "-"*30)
+        user_input = input("Enter symptoms (comma-separated) or 'q' to quit:\n> ")
         
+        if user_input.lower() in ["exit", "quit", "q"]:
+            print("\nStay healthy! Goodbye. 👋")
+            break
+        
+        if user_input.strip():
+            predict_disease(user_input.split(","))
