@@ -72,7 +72,8 @@ symptoms_list = [x for x in symptoms_list if not (x in seen or seen.add(x))]
 
 # Save valid symptom list for user reference
 with open("available_symptoms.txt", "w") as f:
-    f.write("\n".join(sorted(symptoms_list)))
+    f.write("\n".join(symptoms_list))
+
 
 print(f"--- Configuration Loaded: {len(symptoms_list)} Symptoms, {len(diseases_list)} Diseases ---")
 
@@ -87,6 +88,11 @@ except FileNotFoundError:
 # We use LabelEncoder to ensure classes are 0, 1, 2... which helps XGBoost avoid errors
 le = LabelEncoder()
 df['prognosis'] = le.fit_transform(df['prognosis'])
+
+
+with open("disease_names.txt", "w") as f:
+    f.write("\n".join(le.classes_))
+print("Saved disease_names.txt")
 
 # Ensure we remove any rows with missing labels
 df.dropna(subset=['prognosis'], inplace=True)
@@ -228,7 +234,7 @@ def predict_disease(user_input_list):
 # ----------------- Interactive Loop -----------------
 if __name__ == "__main__":
     print("\n===============================================")
-    print("      AI Disease Prediction System v1.0")
+    print("      Health Symptom Analyzer")
     print("===============================================")
     print(f"Database: {len(diseases_list)} Diseases, {len(symptoms_list)} Symptoms.")
     print("Tip: Check 'available_symptoms.txt' for correct spelling.")
