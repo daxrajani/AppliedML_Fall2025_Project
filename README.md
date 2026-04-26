@@ -1,105 +1,60 @@
 # Health Symptom Analyzer
 
-A production-style machine learning project that performs symptom-based condition triage using an ensemble classifier.  
-The repository includes model training, reusable inference logic, a Streamlit application, a FastAPI service, and automated quality checks.
+A symptom-based multi-class classification project built with scikit-learn/XGBoost, exposed through both Streamlit and FastAPI runtimes.
 
 ---
 
-## Project Summary
+## Scope
 
-- Built an end-to-end ML triage system from training to deployment-ready interfaces (web + API).
-- Improved prediction trust by introducing top-3 ranked outputs and confidence-based inconclusive handling.
-- Increased project reliability by centralizing inference logic, reducing behavior drift across UI/API.
-- Added production engineering standards: test coverage for core inference behavior and CI automation.
-- Packaged the project with model governance documentation (`MODEL_CARD.md`) for responsible AI communication.
-
-### Key Outcomes
-
-- Dual-serving interfaces (`Streamlit` for demos, `FastAPI` for integration).
-- Shared inference engine used consistently across all runtime surfaces.
-- Automated validation pipeline in GitHub Actions for repeatable quality checks.
+- Training and persistence of individual classifiers and a weighted soft-voting ensemble
+- Shared inference layer used by both UI and API paths
+- Confidence-ranked predictions (top-3) with inconclusive decision threshold
+- Automated tests and CI checks
 
 ---
 
-## 1) Project Objective
+## Repository Layout
 
-The goal is to demonstrate a complete applied ML workflow:
-
-- train and evaluate multiple classification models
-- aggregate predictions with a weighted soft-voting ensemble
-- expose inference through both UI and API surfaces
-- enforce confidence-aware response behavior for safer outputs
-
-This project is designed for educational and portfolio use, with engineering practices that mirror real-world ML product development.
-
----
-
-## 2) System Architecture
-
-### Core components
-
-- `main.py`  
-  Trains individual models, builds the ensemble, persists artifacts, and supports CLI predictions.
-
-- `inference.py`  
-  Single source of truth for runtime prediction logic: normalization, symptom validation, feature mapping, top-k ranking, and inconclusive threshold handling.
-
-- `app.py`  
-  Streamlit frontend for interactive symptom selection and triage output.
-
-- `api.py`  
-  FastAPI service exposing machine-consumable endpoints (`/health`, `/symptoms`, `/predict`).
-
-- `scripts/evaluation.py`  
-  Offline evaluation script that generates metrics, confusion matrices, and interpretability outputs.
-
-- `models/`  
-  Model-specific constructors and configuration helpers.
-
-### Artifacts and generated outputs
-
+- `main.py`: model training/loading and CLI inference loop
+- `inference.py`: normalization, validation, feature mapping, probability ranking
+- `app.py`: Streamlit interface
+- `api.py`: FastAPI service
+- `models/`: model factory functions and tuned configuration
+- `scripts/evaluation.py`: offline evaluation and artifact generation
+- `tests/`: unit tests for inference behavior
 - `saved_models_main/`: serialized model artifacts
-- `available_symptoms.txt`: valid feature-space symptom names
-- `disease_names.txt`: label mapping used for inference
-- `evaluation_results/`: quantitative and qualitative evaluation outputs
+- `evaluation_results/`: generated evaluation outputs
 
 ---
 
-## 3) Runtime Flow
+## Data and Artifacts
 
-1. User submits symptoms (UI/API/CLI).
-2. Symptoms are normalized and deduplicated.
-3. Invalid symptoms are tracked and excluded.
-4. Input is mapped to the model feature space.
-5. Ensemble probabilities are computed.
-6. Response includes:
-   - top prediction
-   - top-3 ranked conditions with confidence
-   - inconclusive flag when confidence is below threshold
+- Input training file: `Prototype.csv`
+- Generated symptom vocabulary: `available_symptoms.txt`
+- Generated class labels: `disease_names.txt`
+- Model artifacts: `saved_models_main/*.pkl`
 
-This design improves transparency and reduces overconfident single-label behavior.
+`main.py` regenerates vocabulary/label files and trains missing model files as required.
 
 ---
 
-## Engineering Notes
+## Inference Behavior
 
-- **Inference consistency:** `inference.py` is the single prediction path for UI and API.
-- **Feature mapping safety:** runtime inference aligns with model feature ordering to avoid symptom-vector mismatch.
-- **Input robustness:** symptom normalization, deduplication, ignored-token tracking, and minimum-symptom guardrails.
-- **Decision policy:** configurable inconclusive threshold to avoid high-confidence claims on weak evidence.
-- **Test strategy:** targeted unit tests for core business logic and edge-case behavior.
-- **Delivery readiness:** CI checks for test execution and syntax validation on push/PR.
+Runtime inference pipeline (`inference.py`):
+
+1. Normalize input symptom tokens
+2. Apply synonym mapping where configured
+3. Deduplicate and separate invalid symptoms
+4. Map to model feature space
+5. Run `predict_proba`
+6. Return top-3 ranked classes with confidence
+7. Mark result as inconclusive when confidence < threshold
+
+The minimum-symptom requirement and inconclusive threshold are configurable constants.
 
 ---
 
-## 4) Local Setup
-
-### Prerequisites
-
-- Python 3.11+
-- pip
-
-### Installation (PowerShell)
+## Local Setup (PowerShell)
 
 ```powershell
 python -m venv venv
@@ -107,44 +62,51 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-### Train or load model artifacts
+Train/load model artifacts:
 
 ```powershell
 python main.py
 ```
 
-If model files are already present in `saved_models_main/`, they are loaded; otherwise training is performed and artifacts are saved.
-
 ---
 
-## 5) Run the Application
+## Run Targets
 
-### Streamlit UI
+Streamlit:
 
 ```powershell
 streamlit run app.py
 ```
 
-### FastAPI service
+FastAPI:
 
 ```powershell
 uvicorn api:app --reload
 ```
 
-Default API base URL: `http://127.0.0.1:8000`
-
 ---
 
-## 6) API Contract
+## API Endpoints
 
 ### `GET /health`
-Basic service health check.
+Service health metadata.
 
 ### `GET /symptoms`
-Returns the valid symptom list aligned with model feature ordering.
+Returns active symptom feature list used for inference.
 
 ### `POST /predict`
-Predicts likely conditions from input symptoms.
+Request body:
+
+```json
+{
+  "symptoms": ["high_fever", "chills", "headache"]
+}
+```
+
+Response includes:
+- accepted/ignored symptoms
+- top-3 ranked predictions with confidence
+- inconclusive flag
 
 Example:
 
@@ -156,54 +118,40 @@ curl -X POST "http://127.0.0.1:8000/predict" \
 
 ---
 
-## 7) Testing and CI
+## Validation
 
-### Local tests
+Run tests:
 
 ```powershell
 pytest -q tests
 ```
 
-### CI pipeline
+Run syntax checks:
 
-GitHub Actions workflow at `.github/workflows/ci.yml` runs:
+```powershell
+python -m compileall app.py api.py inference.py main.py scripts models tests
+```
 
-- dependency installation
-- unit tests
-- syntax validation (`compileall`)
-
-The workflow is configured for stable test discovery and modern action runtime compatibility.
+CI workflow: `.github/workflows/ci.yml`
 
 ---
 
-## 8) Evaluation and Interpretability
-
-Run:
+## Evaluation
 
 ```powershell
 python scripts/evaluation.py
 ```
 
-The script generates model comparison outputs under `evaluation_results/`, including:
-
+Generated outputs are stored under `evaluation_results/`:
 - comparative metrics
+- per-model reports
 - confusion matrices
-- report files
-- interpretability artifacts (SHAP/LIME where applicable)
+- SHAP/LIME artifacts (when available)
 
 ---
 
-## 9) Responsible Use
+## Constraints
 
 This repository is an educational triage prototype and is **not** a diagnostic medical device.  
-Predictions should never replace clinical assessment by qualified professionals.
-
-For intended use, limitations, and risk notes, see `MODEL_CARD.md`.
-
----
-
-## 10) Team
-
-- Dax Rajani
-- Harsh Ahuja
-- Charanish Miriyala
+Clinical decisions must not be based solely on model output.
+Additional context is documented in `MODEL_CARD.md`.
