@@ -5,7 +5,7 @@ The repository includes model training, reusable inference logic, a Streamlit ap
 
 ---
 
-## Impact Summary (Recruiter-Friendly)
+## Project Summary
 
 - Built an end-to-end ML triage system from training to deployment-ready interfaces (web + API).
 - Improved prediction trust by introducing top-3 ranked outputs and confidence-based inconclusive handling.
@@ -13,7 +13,7 @@ The repository includes model training, reusable inference logic, a Streamlit ap
 - Added production engineering standards: test coverage for core inference behavior and CI automation.
 - Packaged the project with model governance documentation (`MODEL_CARD.md`) for responsible AI communication.
 
-### Outcome Highlights
+### Key Outcomes
 
 - Dual-serving interfaces (`Streamlit` for demos, `FastAPI` for integration).
 - Shared inference engine used consistently across all runtime surfaces.
@@ -81,7 +81,7 @@ This design improves transparency and reduces overconfident single-label behavio
 
 ---
 
-## Engineering Notes (Hiring Manager / Technical Depth)
+## Engineering Notes
 
 - **Inference consistency:** `inference.py` is the single prediction path for UI and API.
 - **Feature mapping safety:** runtime inference aligns with model feature ordering to avoid symptom-vector mismatch.
