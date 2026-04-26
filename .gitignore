@@ -1,0 +1,15 @@
+venv/
+__pycache__/
+*.py[cod]
+*.pkl
+
+# Local editor/system artifacts
+.DS_Store
+Thumbs.db
+.idea/
+.vscode/
+
+# Generated outputs
+evaluation_results/confusion_matrices/*.png
+evaluation_results/interpretability/*.png
+evaluation_results/interpretability/*.html

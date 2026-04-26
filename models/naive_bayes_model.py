@@ -1,5 +1,4 @@
 from sklearn.naive_bayes import GaussianNB
-import numpy as np
 
 def get_nb_model(X_train, y_train):
     

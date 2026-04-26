@@ -2,7 +2,6 @@ import streamlit as st
 import pandas as pd
 import joblib
 import os
-import numpy as np
 import time
 
 # ----------------- Configuration -----------------
@@ -219,10 +218,13 @@ st.write("") # Spacer
 
 # --- Prediction Logic ---
 if st.button("Analyze Health Condition", type="primary", use_container_width=True):
+    if model is None:
+        st.error("❌ Model is not available. Run `python main.py` to train/load models first.")
+        st.stop()
     
     # 1. Validation
     valid_symptoms = [s for s in symptom_inputs if s != "None"]
-    unique_symptoms = list(set(valid_symptoms))
+    unique_symptoms = list(dict.fromkeys(valid_symptoms))
     
     if len(unique_symptoms) < 3:
         st.warning(f"⚠️ **Insufficient Data:** You selected {len(unique_symptoms)} unique symptom(s). Please provide at least 3 distinct symptoms for a reliable analysis.")
