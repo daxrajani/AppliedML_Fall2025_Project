@@ -1,38 +1,12 @@
 import streamlit as st
-import pandas as pd
-import joblib
-import os
 import time
 
-# ----------------- Configuration -----------------
-MODEL_PATH = os.path.join("saved_models_main", "voting_clf.pkl")
-SYMPTOMS_FILE = "available_symptoms.txt"
-DISEASES_FILE = "disease_names.txt"
+from inference import MIN_SYMPTOMS, load_resources, predict_from_symptoms
 
 # ----------------- Helper Functions -----------------
-# We add show_spinner=False to hide the "Running load_model..." text
 @st.cache_resource(show_spinner=False)
-def load_model():
-    if not os.path.exists(MODEL_PATH):
-        st.error(f"Model not found at {MODEL_PATH}. Please run main.py first.")
-        return None
-    return joblib.load(MODEL_PATH)
-
-@st.cache_data(show_spinner=False)
-def load_symptoms():
-    if os.path.exists(SYMPTOMS_FILE):
-        with open(SYMPTOMS_FILE, "r") as f:
-            symptoms = [line.strip() for line in f.readlines()]
-            return ["None"] + symptoms
-    return ["None"]
-
-@st.cache_data(show_spinner=False)
-def load_diseases():
-    if os.path.exists(DISEASES_FILE):
-        with open(DISEASES_FILE, "r") as f:
-            return [line.strip() for line in f.readlines()]
-    else:
-        return []
+def get_cached_resources():
+    return load_resources()
 
 def format_option(option):
     if option == "None":
@@ -195,10 +169,20 @@ st.title("🏥 Health Symptom Analyzer")
 st.markdown("### Describe Your Symptoms")
 st.write("Please select up to 5 symptoms from the dropdowns below to receive a preliminary assessment.")
 
-# Load Resources
-model = load_model()
-all_symptoms = load_symptoms()
-disease_names = load_diseases()
+try:
+    resources = get_cached_resources()
+    model = resources["model"]
+    disease_names = resources["disease_names"]
+    model_feature_list = resources["feature_names"]
+    symptom_synonyms = resources["symptom_synonyms"]
+    all_symptoms = ["None"] + model_feature_list
+except Exception as exc:  # pragma: no cover - Streamlit runtime guard
+    model = None
+    disease_names = []
+    model_feature_list = []
+    symptom_synonyms = {}
+    all_symptoms = ["None"]
+    st.error(f"Failed to load resources: {exc}")
 
 # --- Input Section ---
 symptom_inputs = []
@@ -222,45 +206,53 @@ if st.button("Analyze Health Condition", type="primary", use_container_width=Tru
         st.error("❌ Model is not available. Run `python main.py` to train/load models first.")
         st.stop()
     
-    # 1. Validation
-    valid_symptoms = [s for s in symptom_inputs if s != "None"]
-    unique_symptoms = list(dict.fromkeys(valid_symptoms))
-    
-    if len(unique_symptoms) < 3:
-        st.warning(f"⚠️ **Insufficient Data:** You selected {len(unique_symptoms)} unique symptom(s). Please provide at least 3 distinct symptoms for a reliable analysis.")
+    selected = [symptom for symptom in symptom_inputs if symptom != "None"]
+    result = predict_from_symptoms(
+        symptoms=selected,
+        model=model,
+        feature_names=model_feature_list,
+        disease_names=disease_names,
+        symptom_synonyms=symptom_synonyms,
+    )
+
+    if not result["ok"]:
+        st.warning(
+            f"⚠️ **Insufficient Data:** {result['message']} "
+            f"(Selected {len(result['selected_symptoms'])} valid symptoms, minimum is {MIN_SYMPTOMS})."
+        )
+        if result["ignored_symptoms"]:
+            st.caption(f"Ignored symptoms: {', '.join(result['ignored_symptoms'])}")
     else:
-        if not disease_names:
-            st.error("❌ System Error: Disease database missing. Please contact support.")
-            st.stop()
-
-        # 2. Preparation
-        real_symptom_list = all_symptoms[1:] 
-        input_vector = [1 if symptom in unique_symptoms else 0 for symptom in real_symptom_list]
-        input_df = pd.DataFrame([input_vector], columns=real_symptom_list)
-
-        # 3. Prediction with Animation (Clean Silent Bar)
+        # Prediction animation
         my_bar = st.progress(0)
-
-        # Simulation of "working" (1 second)
         for percent_complete in range(100):
             time.sleep(0.01)
             my_bar.progress(percent_complete + 1)
-        
-        # Clear the bar completely
         my_bar.empty()
 
-        # Actual Model Prediction (No Spinner Text)
-        probas = model.predict_proba(input_df)[0]
-        top3_indices = probas.argsort()[-3:][::-1]
-        top_disease_idx = top3_indices[0]
-        top_disease_name = disease_names[top_disease_idx]
-
-        # 4. Result Display
         st.divider()
-        st.success(f"### Assessment Result: **{top_disease_name}**")
-        
-        # 5. Professional Disclaimer
-        st.info("⚠️ **Medical Disclaimer:** This Machine Learning (ML) tool analyzes symptoms to provide a preliminary assessment. While it is designed to assist in identifying potential conditions, it should not be solely relied upon. This result is not a substitute for professional medical advice; please consult a qualified doctor for a formal diagnosis and treatment.")
+        if result["is_inconclusive"]:
+            st.warning(
+                f"### Assessment Result: **Inconclusive** "
+                f"(confidence {result['confidence']*100:.1f}%)"
+            )
+        else:
+            st.success(
+                f"### Assessment Result: **{result['predicted_disease']}** "
+                f"({result['confidence']*100:.1f}% confidence)"
+            )
+
+        st.markdown("#### Top 3 Possible Conditions")
+        for prediction in result["top_predictions"]:
+            st.write(f"- {prediction['disease']}: {prediction['confidence']*100:.1f}%")
+
+        if result["ignored_symptoms"]:
+            st.caption(f"Ignored symptoms: {', '.join(result['ignored_symptoms'])}")
+
+        st.info(
+            "⚠️ **Medical Disclaimer:** This ML tool is for educational triage support only and "
+            "is not a diagnosis. Always consult a qualified medical professional."
+        )
 
 # --- Footer ---
 st.markdown(
