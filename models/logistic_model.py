@@ -8,9 +8,9 @@ def get_logistic_model(X_train, y_train):
     model = LogisticRegression(
         C=0.1,
         penalty='l2',
-        solver='liblinear',
+        solver='lbfgs',
         random_state=42,
-        max_iter=1000 # Added to ensure convergence
+        max_iter=2000
     )
     
     model.fit(X_train, y_train)

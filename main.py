@@ -1,10 +1,12 @@
-import pandas as pd
-import joblib  
-import os      
+import os
+from typing import List
 
-from sklearn.model_selection import train_test_split
+import joblib
+import pandas as pd
+from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import VotingClassifier
-from sklearn.metrics import accuracy_score
+from sklearn.metrics import accuracy_score, log_loss
+from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
 # Import tuned model functions
@@ -16,7 +18,6 @@ from models.svm_model import get_svm_model
 from models.logistic_model import get_logistic_model
 from models.xgb_model import get_xgb_model 
 
-# ----------------- Setup Configuration -----------------
 MODEL_DIR_MAIN = "saved_models_main"
 os.makedirs(MODEL_DIR_MAIN, exist_ok=True)
 
@@ -29,10 +30,8 @@ model_paths = {
     'Logistic Regression': os.path.join(MODEL_DIR_MAIN, 'lr.pkl'),
     'XGBoost': os.path.join(MODEL_DIR_MAIN, 'xgb.pkl')
 }
-voting_path = os.path.join(MODEL_DIR_MAIN, 'voting_clf.pkl')
+voting_path = os.path.join(MODEL_DIR_MAIN, "voting_clf.pkl")
 
-# ----------------- Define Feature & Label Schema -----------------
-# These lists ensure the model always sees features in the correct order.
 symptoms_list = [
     'itching','skin_rash','nodal_skin_eruptions','continuous_sneezing','shivering','chills','joint_pain',
     'stomach_pain','acidity','ulcers_on_tongue','muscle_wasting','vomiting','burning_micturition','spotting_ urination','fatigue',
@@ -54,118 +53,113 @@ symptoms_list = [
     'silver_like_dusting','small_dents_in_nails','inflammatory_nails','blister','red_sore_around_nose','yellow_crust_ooze'
 ]
 
-diseases_list = [
-    'Fungal infection','Allergy','GERD','Chronic cholestasis','Drug Reaction',
-    'Peptic ulcer diseae','AIDS','Diabetes','Gastroenteritis','Bronchial Asthma','Hypertension',
-    'Migraine','Cervical spondylosis','Paralysis (brain hemorrhage)','Jaundice','Malaria','Chicken pox',
-    'Dengue','Typhoid','hepatitis A','Hepatitis B','Hepatitis C','Hepatitis D','Hepatitis E',
-    'Alcoholic hepatitis','Tuberculosis','Common Cold','Pneumonia','Dimorphic hemmorhoids(piles)',
-    'Heart attack','Varicose veins','Hypothyroidism','Hyperthyroidism','Hypoglycemia','Osteoarthristis',
-    'Arthritis','(vertigo) Paroymsal  Positional Vertigo','Acne','Urinary tract infection','Psoriasis',
-    'Impetigo'
-]
-
-# Remove accidental duplicates while preserving order
-seen = set()
-symptoms_list = [x for x in symptoms_list if not (x in seen or seen.add(x))]
-
-# Save valid symptom list for user reference
-with open("available_symptoms.txt", "w") as f:
-    f.write("\n".join(symptoms_list))
+def _dedupe(items: List[str]) -> List[str]:
+    seen = set()
+    return [item for item in items if not (item in seen or seen.add(item))]
 
 
-print(f"--- Configuration Loaded: {len(symptoms_list)} Symptoms, {len(diseases_list)} Diseases ---")
+def _prepare_dataframe() -> tuple[pd.DataFrame, pd.Series, list[str], list[str]]:
+    try:
+        df = pd.read_csv("Prototype.csv")
+    except FileNotFoundError:
+        raise FileNotFoundError("Error: 'Prototype.csv' not found. Please place it in the project directory.")
 
-# ----------------- Data Loading & Preprocessing -----------------
-try:
-    df = pd.read_csv("Prototype.csv")
-except FileNotFoundError:
-    print("Error: 'Prototype.csv' not found. Please place it in the project directory.")
-    exit()
+    df.columns = [column.strip() for column in df.columns]
+    if "prognosis" not in df.columns:
+        raise ValueError("Expected a 'prognosis' column in Prototype.csv")
 
-# Prepare Labels
-# We use LabelEncoder to ensure classes are 0, 1, 2... which helps XGBoost avoid errors
-le = LabelEncoder()
-df['prognosis'] = le.fit_transform(df['prognosis'])
+    df["prognosis"] = df["prognosis"].astype(str).str.strip()
+    df.dropna(subset=["prognosis"], inplace=True)
+    df = df[df["prognosis"] != ""]
+
+    expected_symptoms = _dedupe(symptoms_list)
+    available_symptoms = [symptom for symptom in expected_symptoms if symptom in df.columns]
+    missing_symptoms = [symptom for symptom in expected_symptoms if symptom not in df.columns]
+    if missing_symptoms:
+        print(f"Warning: {len(missing_symptoms)} configured symptoms missing from dataset.")
+
+    # Ensure binary numeric values.
+    feature_df = df[available_symptoms].fillna(0)
+    feature_df = feature_df.apply(pd.to_numeric, errors="coerce").fillna(0)
+    feature_df = (feature_df > 0).astype(int)
+
+    # Remove features with no variance to stabilize model probabilities.
+    non_constant_features = [column for column in feature_df.columns if feature_df[column].nunique() > 1]
+    dropped = len(feature_df.columns) - len(non_constant_features)
+    if dropped:
+        print(f"Dropped {dropped} constant symptom features.")
+    feature_df = feature_df[non_constant_features]
+
+    le = LabelEncoder()
+    labels = pd.Series(le.fit_transform(df["prognosis"]), name="prognosis")
+    disease_names = list(le.classes_)
+
+    with open("available_symptoms.txt", "w", encoding="utf-8") as symptom_file:
+        symptom_file.write("\n".join(non_constant_features))
+    with open("disease_names.txt", "w", encoding="utf-8") as disease_file:
+        disease_file.write("\n".join(disease_names))
+
+    print(f"Prepared dataset with {len(non_constant_features)} symptoms and {len(disease_names)} diseases.")
+    return feature_df, labels, non_constant_features, disease_names
 
 
-with open("disease_names.txt", "w") as f:
-    f.write("\n".join(le.classes_))
-print("Saved disease_names.txt")
+def train_pipeline():
+    X, y, active_symptoms, diseases_list = _prepare_dataframe()
+    X_train, X_test, y_train, y_test = train_test_split(
+        X, y, test_size=0.20, random_state=42, stratify=y
+    )
+    print(f"Data split: {len(X_train)} train / {len(X_test)} test samples.")
 
-# Ensure we remove any rows with missing labels
-df.dropna(subset=['prognosis'], inplace=True)
+    models = {}
+    model_getters = {
+        "KNN": get_knn_model,
+        "Naive Bayes": get_nb_model,
+        "Decision Tree": get_dt_model,
+        "Random Forest": get_rf_model,
+        "SVM": get_svm_model,
+        "Logistic Regression": get_logistic_model,
+        "XGBoost": get_xgb_model,
+    }
 
-X = df[symptoms_list]
-y = df['prognosis'].astype(int)
-
-# Update our disease lookup list to match the encoder's order
-diseases_list = list(le.classes_)
-
-# Split Data: 80% for training models, 20% for evaluating performance
-X_train, X_test, y_train, y_test = train_test_split(
-    X, y, test_size=0.2, random_state=42, stratify=y
-)
-
-print(f"Data Loaded: {len(X_train)} training samples, {len(X_test)} testing samples.")
-
-# ----------------- Model Training -----------------
-print("\n--- initializing Model Training ---")
-
-models = {}
-model_getters = {
-    'KNN': get_knn_model,
-    'Naive Bayes': get_nb_model,
-    'Decision Tree': get_dt_model,
-    'Random Forest': get_rf_model,
-    'SVM': get_svm_model,
-    'Logistic Regression': get_logistic_model,
-    'XGBoost': get_xgb_model
-}
-
-# Train each model individually and save it
-for name, getter_func in model_getters.items():
-    path = model_paths[name]
-    
-    if os.path.exists(path):
-        # Load existing model to save time
-        models[name] = joblib.load(path)
-    else:
-        # Train new model using our helper functions
+    print("\n--- Training base models ---")
+    for name, getter_func in model_getters.items():
+        path = model_paths[name]
         print(f"Training {name}...")
-        model = getter_func(X_train, y_train) 
+        model = getter_func(X_train, y_train)
         models[name] = model
-        joblib.dump(model, path) 
-    
-    # Quick accuracy check
-    y_pred = models[name].predict(X_test)
-    acc = accuracy_score(y_test, y_pred) * 100
-    print(f"{name} Accuracy: {acc:.2f}%")
+        joblib.dump(model, path)
 
+        y_pred = model.predict(X_test)
+        acc = accuracy_score(y_test, y_pred) * 100
+        print(f"{name:20s} accuracy: {acc:.2f}%")
 
-# ----------------- Ensemble Learning (Voting) -----------------
-print("\n--- initializing Voting Ensemble ---")
+    print("\n--- Training calibrated ensemble ---")
+    estimators = [
+        ("KNN", models["KNN"]),
+        ("Naive Bayes", models["Naive Bayes"]),
+        ("Decision Tree", models["Decision Tree"]),
+        ("Random Forest", models["Random Forest"]),
+        ("SVM", models["SVM"]),
+        ("Logistic Regression", models["Logistic Regression"]),
+        ("XGBoost", models["XGBoost"]),
+    ]
+    weights = [1, 1, 1, 4, 2, 2, 3]
 
-# We exclude XGBoost from the voting ensemble to keep it as a standalone benchmark
-estimators = [(name, model) for name, model in models.items() if name != 'XGBoost']
+    ensemble = VotingClassifier(estimators=estimators, voting="soft", weights=weights)
+    calibrated_ensemble = CalibratedClassifierCV(ensemble, method="sigmoid", cv=3)
+    calibrated_ensemble.fit(X_train, y_train)
+    joblib.dump(calibrated_ensemble, voting_path)
 
-# Weighted Voting Strategy:
-# We give Random Forest a weight of 5 because it proved most robust in our testing.
-# Order matches 'estimators': KNN, NB, DT, RF, SVM, LR
-weights = [1, 1, 1, 5, 1, 1] 
+    y_pred = calibrated_ensemble.predict(X_test)
+    y_proba = calibrated_ensemble.predict_proba(X_test)
+    ensemble_acc = accuracy_score(y_test, y_pred) * 100
+    ensemble_loss = log_loss(y_test, y_proba)
+    mean_top_conf = float(y_proba.max(axis=1).mean()) * 100
+    print(f"Calibrated ensemble accuracy: {ensemble_acc:.2f}%")
+    print(f"Calibrated ensemble log-loss: {ensemble_loss:.4f}")
+    print(f"Average top-class confidence: {mean_top_conf:.2f}%")
 
-if os.path.exists(voting_path):
-    voting_clf = joblib.load(voting_path)
-    print("Loaded existing Voting Classifier.")
-else:
-    print("Training Weighted Voting Classifier...")
-    voting_clf = VotingClassifier(estimators=estimators, voting='soft', weights=weights)
-    voting_clf.fit(X_train, y_train)
-    joblib.dump(voting_clf, voting_path)
-
-# Evaluate Ensemble
-y_pred = voting_clf.predict(X_test)
-print(f"Ensemble Accuracy: {accuracy_score(y_test, y_pred)*100:.2f}%")
+    return calibrated_ensemble, models, active_symptoms, diseases_list
 
 
 # ----------------- Prediction Application -----------------
@@ -205,7 +199,6 @@ def predict_disease(user_input_list):
         print(f"{name}: {diseases_list[pred_label]}")
 
     # 5. Ensemble Prediction with Confidence
-    # Get probability scores for all diseases
     probas = voting_clf.predict_proba(input_df)[0]
     
     # Find the top 3 matches
@@ -232,6 +225,7 @@ def predict_disease(user_input_list):
 
 # ----------------- Interactive Loop -----------------
 if __name__ == "__main__":
+    voting_clf, models, symptoms_list, diseases_list = train_pipeline()
     print("\n===============================================")
     print("      Health Symptom Analyzer")
     print("===============================================")

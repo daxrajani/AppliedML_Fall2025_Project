@@ -10,7 +10,7 @@ Chicken pox
 Chronic cholestasis
 Common Cold
 Dengue
-Diabetes 
+Diabetes
 Dimorphic hemmorhoids(piles)
 Drug Reaction
 Fungal infection
@@ -21,7 +21,7 @@ Hepatitis B
 Hepatitis C
 Hepatitis D
 Hepatitis E
-Hypertension 
+Hypertension
 Hyperthyroidism
 Hypoglycemia
 Hypothyroidism

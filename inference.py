@@ -11,7 +11,7 @@ SYMPTOMS_FILE = Path("available_symptoms.txt")
 DISEASES_FILE = Path("disease_names.txt")
 
 MIN_SYMPTOMS = 3
-INCONCLUSIVE_THRESHOLD = 0.30
+INCONCLUSIVE_THRESHOLD = 0.45
 
 
 def _read_lines(file_path: Path) -> List[str]:
@@ -113,6 +113,15 @@ def predict_from_symptoms(
 
     best = top_predictions[0]
     is_inconclusive = best["confidence"] < inconclusive_threshold
+    top3_total = sum(item["confidence"] for item in top_predictions) or 1.0
+    normalized_top3_confidence = best["confidence"] / top3_total
+
+    if best["confidence"] >= 0.75:
+        confidence_band = "high"
+    elif best["confidence"] >= 0.55:
+        confidence_band = "moderate"
+    else:
+        confidence_band = "low"
 
     return {
         "ok": True,
@@ -123,5 +132,7 @@ def predict_from_symptoms(
         "top_predictions": top_predictions,
         "predicted_disease": best["disease"],
         "confidence": best["confidence"],
+        "relative_confidence_top3": normalized_top3_confidence,
+        "confidence_band": confidence_band,
         "is_inconclusive": is_inconclusive,
     }

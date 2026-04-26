@@ -1,6 +1,4 @@
 import streamlit as st
-import time
-
 from inference import MIN_SYMPTOMS, load_resources, predict_from_symptoms
 
 # ----------------- Helper Functions -----------------
@@ -13,161 +11,90 @@ def format_option(option):
         return "Select a symptom..."
     return option.replace("_", " ").title()
 
-# ----------------- Custom CSS (Medical Light Theme) -----------------
+# ----------------- Custom CSS -----------------
 def local_css():
     st.markdown("""
         <style>
-        /* 1. Global Font & Colors */
-        html, body, [class*="css"] {
-            font-family: 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
-            color: #2c3e50;
+        html, body, [class*="css"], .stApp {
+            font-family: Inter, 'Segoe UI', Roboto, Helvetica, Arial, sans-serif;
         }
 
-        /* 2. Main Background - Clean Medical White/Teal Gradient */
         .stApp {
-            background: linear-gradient(to bottom right, #ffffff 0%, #e0f7fa 100%);
+            background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
             background-attachment: fixed;
         }
 
-        /* 3. Headers - Deep Medical Blue */
-        h1, h2, h3 {
-            color: #0277bd !important;
+        h1, h2, h3, h4 {
+            color: #0a2540 !important;
             font-weight: 700;
-            text-transform: uppercase;
-            letter-spacing: 0.5px;
-        }
-        
-        p, label, .stMarkdown {
-            color: #455a64 !important; /* Soft Slate Grey */
-            font-weight: 500;
         }
 
-        /* 4. Glassmorphism Inputs (The Box Itself) */
-        .stSelectbox > div > div {
-            background-color: rgba(255, 255, 255, 0.85) !important;
-            backdrop-filter: blur(12px);
-            -webkit-backdrop-filter: blur(12px);
-            border: 1px solid #b3e5fc; /* Light Blue Border */
-            border-radius: 12px;
-            color: #01579b !important;
-            box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
-        }
-
-        /* Hover effect on the box */
-        .stSelectbox > div > div:hover {
-            border: 1px solid #0288d1;
-            box-shadow: 0 6px 12px rgba(2, 136, 209, 0.1);
-        }
-
-        /* 5. Dropdown Menu Items (The list that pops up) */
-        ul[data-baseweb="menu"] {
-            background-color: #ffffff !important;
-            border: 1px solid #e1f5fe !important;
-            box-shadow: 0 4px 12px rgba(0,0,0,0.1) !important;
-            border-radius: 10px !important;
-        }
-
-        li[data-baseweb="option"] {
-            color: #37474f !important;
-        }
-
-        li[data-baseweb="option"]:hover, li[aria-selected="true"] {
-            background-color: #e1f5fe !important;
-            color: #0277bd !important;
-            font-weight: bold;
-        }
-
-        /* The selected value text in the closed box */
-        .stSelectbox div[data-baseweb="select"] span {
-            color: #01579b !important; 
-            font-weight: 600;
-        }
-        
-        /* 6. VISIBILITY FIX: Text color WHEN TYPING (Search) */
-        .stSelectbox input {
-            color: #01579b !important; 
-            caret-color: #01579b !important;
-        }
-        
-        /* 7. ARROW FIX: Force the Dropdown Arrow to be Blue */
-        .stSelectbox div[data-baseweb="select"] svg {
-            fill: #01579b !important;
-            stroke: #01579b !important;
-        }
-
-        /* 8. Analyze Button */
         .stButton > button {
-            background: linear-gradient(45deg, #0288d1, #26c6da);
+            background: linear-gradient(135deg, #2451ff, #3f8cff);
             color: white;
             border: none;
-            border-radius: 25px;
-            padding: 12px 24px;
-            font-weight: bold;
-            letter-spacing: 1px;
-            box-shadow: 0 4px 10px rgba(2, 136, 209, 0.3);
-            transition: all 0.3s ease;
+            border-radius: 10px;
+            padding: 0.7rem 1rem;
+            font-weight: 600;
             width: 100%;
         }
-        
+
         .stButton > button:hover {
-            background: linear-gradient(45deg, #0277bd, #00acc1);
-            box-shadow: 0 6px 15px rgba(2, 136, 209, 0.4);
-            transform: translateY(-2px);
+            filter: brightness(1.05);
         }
 
-        /* 9. Success/Result Box */
-        div[data-baseweb="notification"] {
-            background-color: rgba(224, 247, 250, 0.95) !important;
-            border: 1px solid #4dd0e1;
-            color: #006064;
+        .result-card {
+            background: #ffffff;
+            border: 1px solid #dce6f6;
             border-radius: 12px;
-        }
-        
-        /* 10. Disclaimer Box */
-        .stAlert {
-            background-color: rgba(227, 242, 253, 0.95) !important;
-            border: 1px solid #64b5f6;
-            color: #0d47a1;
-            border-radius: 12px;
-        }
-        
-        /* 11. Progress Bar */
-        .stProgress > div > div > div > div {
-            background-image: linear-gradient(45deg, #0288d1, #26c6da);
+            padding: 1rem 1.2rem;
+            box-shadow: 0 4px 12px rgba(36, 81, 255, 0.08);
+            margin-bottom: 1rem;
         }
 
-        /* 12. Footer */
+        .badge {
+            display: inline-block;
+            border-radius: 999px;
+            padding: 0.2rem 0.7rem;
+            font-size: 0.75rem;
+            font-weight: 600;
+            margin-left: 0.35rem;
+        }
+
+        .badge-low { background: #fee2e2; color: #991b1b; }
+        .badge-moderate { background: #fef3c7; color: #92400e; }
+        .badge-high { background: #dcfce7; color: #166534; }
+
+        .subtitle {
+            color: #4f5d75;
+            margin-top: -0.35rem;
+            margin-bottom: 1rem;
+        }
+
         .footer {
-            margin-top: 50px;
-            padding-top: 20px;
-            border-top: 1px solid #cfd8dc;
-            color: #90a4ae;
-            font-size: 0.85rem;
+            margin-top: 2rem;
+            padding-top: 1rem;
+            border-top: 1px solid #dce6f6;
+            color: #6b7280;
+            font-size: 0.82rem;
             text-align: center;
         }
 
-        /* 13. HIDE STREAMLIT DEFAULT HEADER & FOOTER */
         #MainMenu {visibility: hidden;}
         header {visibility: hidden;}
         footer {visibility: hidden;}
-        
-        /* Adjust top padding since header is gone */
-        .block-container {
-            padding-top: 2rem !important;
-        }
         </style>
         """, unsafe_allow_html=True)
 
 # ----------------- App Layout -----------------
-st.set_page_config(page_title="Disease Prediction System", page_icon="🏥", layout="centered")
+st.set_page_config(page_title="Health Symptom Analyzer", page_icon="🏥", layout="wide")
 
 # Inject Custom CSS
 local_css()
 
 # --- Header ---
-st.title("🏥 Health Symptom Analyzer")
-st.markdown("### Describe Your Symptoms")
-st.write("Please select up to 5 symptoms from the dropdowns below to receive a preliminary assessment.")
+st.title("Health Symptom Analyzer")
+st.markdown("<p class='subtitle'>Symptom-based triage assistance powered by a calibrated ensemble model.</p>", unsafe_allow_html=True)
 
 try:
     resources = get_cached_resources()
@@ -184,24 +111,36 @@ except Exception as exc:  # pragma: no cover - Streamlit runtime guard
     all_symptoms = ["None"]
     st.error(f"Failed to load resources: {exc}")
 
-# --- Input Section ---
-symptom_inputs = []
+with st.sidebar:
+    st.markdown("### Input Controls")
+    min_required = st.slider("Minimum symptoms required", min_value=2, max_value=6, value=MIN_SYMPTOMS, step=1)
+    top_k = st.slider("Top predictions to display", min_value=1, max_value=5, value=3, step=1)
+    st.markdown("### Notes")
+    st.caption("Use precise symptom terms for best results. The model returns ranked suggestions, not a medical diagnosis.")
 
-with st.container():
+left_col, right_col = st.columns([1.2, 1], gap="large")
+
+with left_col:
+    st.markdown("### Symptom Selection")
+    symptom_inputs = []
     for i in range(1, 6):
         val = st.selectbox(
-            f"Symptom {i}", 
-            options=all_symptoms, 
-            index=0, 
-            key=f"s{i}", 
-            format_func=format_option
+            f"Symptom {i}",
+            options=all_symptoms,
+            index=0,
+            key=f"s{i}",
+            format_func=format_option,
         )
         symptom_inputs.append(val)
-
-st.write("") # Spacer
+    run_prediction = st.button("Run Analysis", type="primary", use_container_width=True)
 
 # --- Prediction Logic ---
-if st.button("Analyze Health Condition", type="primary", use_container_width=True):
+with right_col:
+    st.markdown("### Prediction Result")
+    if not run_prediction:
+        st.info("Select symptoms on the left and run analysis.")
+
+if run_prediction:
     if model is None:
         st.error("❌ Model is not available. Run `python main.py` to train/load models first.")
         st.stop()
@@ -213,46 +152,45 @@ if st.button("Analyze Health Condition", type="primary", use_container_width=Tru
         feature_names=model_feature_list,
         disease_names=disease_names,
         symptom_synonyms=symptom_synonyms,
+        min_symptoms=min_required,
     )
 
-    if not result["ok"]:
-        st.warning(
-            f"⚠️ **Insufficient Data:** {result['message']} "
-            f"(Selected {len(result['selected_symptoms'])} valid symptoms, minimum is {MIN_SYMPTOMS})."
-        )
-        if result["ignored_symptoms"]:
-            st.caption(f"Ignored symptoms: {', '.join(result['ignored_symptoms'])}")
-    else:
-        # Prediction animation
-        my_bar = st.progress(0)
-        for percent_complete in range(100):
-            time.sleep(0.01)
-            my_bar.progress(percent_complete + 1)
-        my_bar.empty()
-
-        st.divider()
-        if result["is_inconclusive"]:
-            st.warning(
-                f"### Assessment Result: **Inconclusive** "
-                f"(confidence {result['confidence']*100:.1f}%)"
+    with right_col:
+        if not result["ok"]:
+            st.error(
+                f"{result['message']} (received {len(result['selected_symptoms'])} valid symptoms)"
             )
+            if result["ignored_symptoms"]:
+                st.caption(f"Ignored symptoms: {', '.join(result['ignored_symptoms'])}")
         else:
-            st.success(
-                f"### Assessment Result: **{result['predicted_disease']}** "
-                f"({result['confidence']*100:.1f}% confidence)"
+            band = result["confidence_band"]
+            badge_class = f"badge-{band}"
+            confidence_pct = result["confidence"] * 100
+            relative_pct = result["relative_confidence_top3"] * 100
+
+            status_text = "Inconclusive" if result["is_inconclusive"] else result["predicted_disease"]
+            st.markdown(
+                f"<div class='result-card'><h4>{status_text}<span class='badge {badge_class}'>{band.upper()}</span></h4>"
+                f"<p>Absolute confidence: <b>{confidence_pct:.1f}%</b><br/>"
+                f"Relative confidence (within top-{top_k}): <b>{relative_pct:.1f}%</b></p></div>",
+                unsafe_allow_html=True,
             )
 
-        st.markdown("#### Top 3 Possible Conditions")
-        for prediction in result["top_predictions"]:
-            st.write(f"- {prediction['disease']}: {prediction['confidence']*100:.1f}%")
+            metric_col_1, metric_col_2 = st.columns(2)
+            metric_col_1.metric("Absolute confidence", f"{confidence_pct:.1f}%")
+            metric_col_2.metric("Relative confidence", f"{relative_pct:.1f}%")
 
-        if result["ignored_symptoms"]:
-            st.caption(f"Ignored symptoms: {', '.join(result['ignored_symptoms'])}")
+            st.markdown(f"#### Top {top_k} Conditions")
+            for prediction in result["top_predictions"][:top_k]:
+                st.progress(float(prediction["confidence"]))
+                st.caption(f"{prediction['disease']} - {prediction['confidence']*100:.1f}%")
 
-        st.info(
-            "⚠️ **Medical Disclaimer:** This ML tool is for educational triage support only and "
-            "is not a diagnosis. Always consult a qualified medical professional."
-        )
+            if result["ignored_symptoms"]:
+                st.warning(f"Ignored symptoms: {', '.join(result['ignored_symptoms'])}")
+
+            st.info(
+                "This system provides triage-oriented ML predictions and should be used with professional medical judgment."
+            )
 
 # --- Footer ---
 st.markdown(
