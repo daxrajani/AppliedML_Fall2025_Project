@@ -1,11 +1,15 @@
+import hashlib
+import json
 import os
-from typing import List
+from datetime import datetime, timezone
+from typing import List, Tuple
 
 import joblib
+import numpy as np
 import pandas as pd
 from sklearn.calibration import CalibratedClassifierCV
 from sklearn.ensemble import VotingClassifier
-from sklearn.metrics import accuracy_score, log_loss
+from sklearn.metrics import accuracy_score, f1_score, log_loss
 from sklearn.model_selection import train_test_split
 from sklearn.preprocessing import LabelEncoder
 
@@ -20,6 +24,7 @@ from models.xgb_model import get_xgb_model
 
 MODEL_DIR_MAIN = "saved_models_main"
 os.makedirs(MODEL_DIR_MAIN, exist_ok=True)
+MANIFEST_PATH = os.path.join(MODEL_DIR_MAIN, "model_manifest.json")
 
 model_paths = {
     'KNN': os.path.join(MODEL_DIR_MAIN, 'knn.pkl'),
@@ -53,16 +58,37 @@ symptoms_list = [
     'silver_like_dusting','small_dents_in_nails','inflammatory_nails','blister','red_sore_around_nose','yellow_crust_ooze'
 ]
 
+BASE_DATA_FILE = "Prototype.csv"
+AUGMENTED_DATA_FILE = "Prototype_augmented.csv"
+
 def _dedupe(items: List[str]) -> List[str]:
     seen = set()
     return [item for item in items if not (item in seen or seen.add(item))]
 
 
-def _prepare_dataframe() -> tuple[pd.DataFrame, pd.Series, list[str], list[str]]:
-    try:
-        df = pd.read_csv("Prototype.csv")
-    except FileNotFoundError:
-        raise FileNotFoundError("Error: 'Prototype.csv' not found. Please place it in the project directory.")
+def _load_and_merge_dataframes() -> pd.DataFrame:
+    available_frames = []
+    use_augmented = os.environ.get("USE_AUGMENTED_DATA", "0") == "1"
+
+    if os.path.exists(BASE_DATA_FILE):
+        available_frames.append(pd.read_csv(BASE_DATA_FILE))
+        print(f"Loaded data source: {BASE_DATA_FILE}")
+
+    if use_augmented and os.path.exists(AUGMENTED_DATA_FILE):
+        available_frames.append(pd.read_csv(AUGMENTED_DATA_FILE))
+        print(f"Loaded data source: {AUGMENTED_DATA_FILE}")
+    elif use_augmented:
+        print("USE_AUGMENTED_DATA=1 set, but Prototype_augmented.csv not found. Proceeding with base data.")
+
+    if not available_frames:
+        raise FileNotFoundError("No dataset found. Expected Prototype.csv or Prototype_augmented.csv.")
+
+    merged = pd.concat(available_frames, ignore_index=True)
+    return merged
+
+
+def _prepare_dataframe() -> tuple[pd.DataFrame, pd.Series, list[str], list[str], int]:
+    df = _load_and_merge_dataframes()
 
     df.columns = [column.strip() for column in df.columns]
     if "prognosis" not in df.columns:
@@ -100,15 +126,95 @@ def _prepare_dataframe() -> tuple[pd.DataFrame, pd.Series, list[str], list[str]]
         disease_file.write("\n".join(disease_names))
 
     print(f"Prepared dataset with {len(non_constant_features)} symptoms and {len(disease_names)} diseases.")
-    return feature_df, labels, non_constant_features, disease_names
+    return feature_df, labels, non_constant_features, disease_names, len(df)
+
+
+def _split_data(
+    X: pd.DataFrame, y: pd.Series
+) -> tuple[pd.DataFrame, pd.DataFrame, pd.DataFrame, pd.Series, pd.Series, pd.Series]:
+    # 15% held-out test, then 15% validation from remaining 85%
+    X_train_val, X_test, y_train_val, y_test = train_test_split(
+        X, y, test_size=0.15, random_state=42, stratify=y
+    )
+    X_train, X_val, y_train, y_val = train_test_split(
+        X_train_val,
+        y_train_val,
+        test_size=0.17647,
+        random_state=42,
+        stratify=y_train_val,
+    )
+    return X_train, X_val, X_test, y_train, y_val, y_test
+
+
+def _tune_escalation_policy(model, X_val: pd.DataFrame, y_val: pd.Series) -> tuple[float, float, dict]:
+    probabilities = model.predict_proba(X_val)
+    predicted = model.predict(X_val)
+
+    best_score = -1.0
+    best_threshold = 0.45
+    best_margin = 0.08
+    best_metrics = {}
+
+    for confidence_threshold in np.arange(0.40, 0.76, 0.05):
+        for margin_threshold in np.arange(0.02, 0.21, 0.02):
+            sorted_probs = np.sort(probabilities, axis=1)
+            top1 = sorted_probs[:, -1]
+            top2 = sorted_probs[:, -2]
+            accepted = (top1 >= confidence_threshold) & ((top1 - top2) >= margin_threshold)
+
+            coverage = float(np.mean(accepted))
+            if coverage == 0:
+                continue
+
+            accepted_true = y_val[accepted]
+            accepted_pred = predicted[accepted]
+            accepted_f1 = f1_score(accepted_true, accepted_pred, average="macro", zero_division=0)
+            score = 0.70 * accepted_f1 + 0.30 * coverage
+
+            if score > best_score:
+                best_score = score
+                best_threshold = float(confidence_threshold)
+                best_margin = float(margin_threshold)
+                best_metrics = {
+                    "validation_coverage": coverage,
+                    "validation_macro_f1_on_accepted": float(accepted_f1),
+                    "optimization_score": float(score),
+                }
+
+    return best_threshold, best_margin, best_metrics
+
+
+def _write_manifest(
+    model_version: str,
+    total_rows: int,
+    active_symptoms: list[str],
+    disease_names: list[str],
+    confidence_threshold: float,
+    margin_threshold: float,
+    metrics: dict,
+) -> None:
+    feature_hash = hashlib.sha256(",".join(active_symptoms).encode("utf-8")).hexdigest()
+    manifest = {
+        "model_version": model_version,
+        "created_at_utc": datetime.now(timezone.utc).isoformat(),
+        "total_rows": total_rows,
+        "feature_count": len(active_symptoms),
+        "disease_count": len(disease_names),
+        "feature_hash_sha256": feature_hash,
+        "confidence_threshold": confidence_threshold,
+        "top2_margin_threshold": margin_threshold,
+        "metrics": metrics,
+    }
+    with open(MANIFEST_PATH, "w", encoding="utf-8") as f:
+        json.dump(manifest, f, indent=2)
 
 
 def train_pipeline():
-    X, y, active_symptoms, diseases_list = _prepare_dataframe()
-    X_train, X_test, y_train, y_test = train_test_split(
-        X, y, test_size=0.20, random_state=42, stratify=y
+    X, y, active_symptoms, diseases_list, total_rows = _prepare_dataframe()
+    X_train, X_val, X_test, y_train, y_val, y_test = _split_data(X, y)
+    print(
+        f"Data split: {len(X_train)} train / {len(X_val)} val / {len(X_test)} test samples."
     )
-    print(f"Data split: {len(X_train)} train / {len(X_test)} test samples.")
 
     models = {}
     model_getters = {
@@ -150,14 +256,51 @@ def train_pipeline():
     calibrated_ensemble.fit(X_train, y_train)
     joblib.dump(calibrated_ensemble, voting_path)
 
+    confidence_threshold, margin_threshold, tuning_metrics = _tune_escalation_policy(
+        calibrated_ensemble, X_val, y_val
+    )
+    print(
+        f"Tuned escalation policy: confidence >= {confidence_threshold:.2f}, "
+        f"top2 margin >= {margin_threshold:.2f}"
+    )
+
     y_pred = calibrated_ensemble.predict(X_test)
     y_proba = calibrated_ensemble.predict_proba(X_test)
     ensemble_acc = accuracy_score(y_test, y_pred) * 100
     ensemble_loss = log_loss(y_test, y_proba)
     mean_top_conf = float(y_proba.max(axis=1).mean()) * 100
+
+    sorted_probs = np.sort(y_proba, axis=1)
+    accepted = (sorted_probs[:, -1] >= confidence_threshold) & (
+        (sorted_probs[:, -1] - sorted_probs[:, -2]) >= margin_threshold
+    )
+    accepted_coverage = float(np.mean(accepted))
+
+    test_metrics = {
+        "test_accuracy": float(accuracy_score(y_test, y_pred)),
+        "test_macro_f1": float(f1_score(y_test, y_pred, average="macro", zero_division=0)),
+        "test_log_loss": float(ensemble_loss),
+        "test_average_top_confidence": float(y_proba.max(axis=1).mean()),
+        "test_accepted_coverage": accepted_coverage,
+    }
+    test_metrics.update(tuning_metrics)
+
+    model_version = datetime.now(timezone.utc).strftime("v%Y.%m.%d.%H%M%S")
+    _write_manifest(
+        model_version=model_version,
+        total_rows=total_rows,
+        active_symptoms=active_symptoms,
+        disease_names=diseases_list,
+        confidence_threshold=confidence_threshold,
+        margin_threshold=margin_threshold,
+        metrics=test_metrics,
+    )
+
     print(f"Calibrated ensemble accuracy: {ensemble_acc:.2f}%")
     print(f"Calibrated ensemble log-loss: {ensemble_loss:.4f}")
     print(f"Average top-class confidence: {mean_top_conf:.2f}%")
+    print(f"Escalation coverage on test: {accepted_coverage*100:.2f}%")
+    print(f"Manifest saved to {MANIFEST_PATH}")
 
     return calibrated_ensemble, models, active_symptoms, diseases_list
 

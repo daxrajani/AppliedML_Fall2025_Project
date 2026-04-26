@@ -1,58 +1,80 @@
 # Health Symptom Analyzer
 
-A symptom-based multi-class classification project built with scikit-learn/XGBoost, exposed through both Streamlit and FastAPI runtimes.
+Symptom-based multi-class classification system with:
+- calibrated ensemble training
+- shared inference logic
+- Streamlit UI
+- FastAPI service
+- automated test and CI validation
 
----
+## Architecture
 
-## Scope
+- `main.py`
+  - data loading and cleaning
+  - train/validation/test splitting
+  - base model training
+  - calibrated ensemble training
+  - escalation threshold tuning
+  - model manifest generation
+- `inference.py`
+  - runtime normalization and validation
+  - symptom-to-feature mapping
+  - top-k ranking
+  - escalation policy (confidence + top-2 margin)
+- `app.py`
+  - interactive prediction UI
+  - confidence and escalation display
+- `api.py`
+  - REST endpoints for health, version, symptom list, prediction
+- `models/`
+  - model factory functions and tuned estimator settings
+- `scripts/`
+  - `evaluation.py` (classification metrics and interpretability artifacts)
+  - `calibration_report.py` (reliability curve, ECE, Brier score, log-loss)
+- `data_generation/`
+  - `augment_prototype.py` (optional synthetic expansion dataset generation)
 
-- Training and persistence of individual classifiers and a weighted soft-voting ensemble
-- Shared inference layer used by both UI and API paths
-- Confidence-ranked predictions (top-3) with inconclusive decision threshold
-- Automated tests and CI checks
+## Data Inputs and Outputs
 
----
+### Input datasets
+- `Prototype.csv` (base dataset)
+- `Prototype_augmented.csv` (optional, generated)
 
-## Repository Layout
+### Generated metadata
+- `available_symptoms.txt`
+- `disease_names.txt`
+- `saved_models_main/model_manifest.json`
 
-- `main.py`: model training/loading and CLI inference loop
-- `inference.py`: normalization, validation, feature mapping, probability ranking
-- `app.py`: Streamlit interface
-- `api.py`: FastAPI service
-- `models/`: model factory functions and tuned configuration
-- `scripts/evaluation.py`: offline evaluation and artifact generation
-- `tests/`: unit tests for inference behavior
-- `saved_models_main/`: serialized model artifacts
-- `evaluation_results/`: generated evaluation outputs
+### Model artifacts
+- `saved_models_main/*.pkl`
 
----
+## Training Pipeline
 
-## Data and Artifacts
+1. Load base dataset (and optional augmented dataset when enabled).
+2. Normalize labels and coerce symptom features to binary values.
+3. Drop constant symptom columns.
+4. Split data into train/validation/test.
+5. Train base estimators (`KNN`, `Naive Bayes`, `Decision Tree`, `Random Forest`, `SVM`, `Logistic Regression`, `XGBoost`).
+6. Train calibrated soft-voting ensemble.
+7. Tune escalation thresholds on validation set:
+   - absolute confidence threshold
+   - top-2 margin threshold
+8. Evaluate on test set and write model manifest.
 
-- Input training file: `Prototype.csv`
-- Generated symptom vocabulary: `available_symptoms.txt`
-- Generated class labels: `disease_names.txt`
-- Model artifacts: `saved_models_main/*.pkl`
+## Inference Contract
 
-`main.py` regenerates vocabulary/label files and trains missing model files as required.
+### Input
+- symptom string list
 
----
-
-## Inference Behavior
-
-Runtime inference pipeline (`inference.py`):
-
-1. Normalize input symptom tokens
-2. Apply synonym mapping where configured
-3. Deduplicate and separate invalid symptoms
-4. Map to model feature space
-5. Run `predict_proba`
-6. Return top-3 ranked classes with confidence
-7. Mark result as inconclusive when confidence < threshold
-
-The minimum-symptom requirement and inconclusive threshold are configurable constants.
-
----
+### Output fields (core)
+- `predicted_disease`
+- `top_predictions` (ranked with confidence)
+- `confidence`
+- `top2_margin`
+- `is_inconclusive`
+- `requires_clinician_review`
+- `escalation_reason`
+- `model_version`
 
 ## Local Setup (PowerShell)
 
@@ -62,96 +84,64 @@ python -m venv venv
 pip install -r requirements.txt
 ```
 
-Train/load model artifacts:
+## Run
 
+### Train on base data
 ```powershell
 python main.py
 ```
 
----
+### Optional: generate and use augmented data
+```powershell
+python data_generation/augment_prototype.py
+$env:USE_AUGMENTED_DATA="1"
+python main.py
+```
 
-## Run Targets
-
-Streamlit:
-
+### Run Streamlit UI
 ```powershell
 streamlit run app.py
 ```
 
-FastAPI:
-
+### Run API
 ```powershell
 uvicorn api:app --reload
 ```
 
----
-
 ## API Endpoints
 
-### `GET /health`
-Service health metadata.
+- `GET /health`
+- `GET /version`
+- `GET /symptoms`
+- `POST /predict`
 
-### `GET /symptoms`
-Returns active symptom feature list used for inference.
-
-### `POST /predict`
-Request body:
-
-```json
-{
-  "symptoms": ["high_fever", "chills", "headache"]
-}
-```
-
-Response includes:
-- accepted/ignored symptoms
-- top-3 ranked predictions with confidence
-- inconclusive flag
-
-Example:
-
+### Example
 ```bash
 curl -X POST "http://127.0.0.1:8000/predict" \
   -H "Content-Type: application/json" \
   -d "{\"symptoms\": [\"high_fever\", \"chills\", \"headache\", \"nausea\"]}"
 ```
 
----
-
-## Validation
-
-Run tests:
-
-```powershell
-pytest -q tests
-```
-
-Run syntax checks:
-
-```powershell
-python -m compileall app.py api.py inference.py main.py scripts models tests
-```
-
-CI workflow: `.github/workflows/ci.yml`
-
----
-
 ## Evaluation
 
 ```powershell
 python scripts/evaluation.py
+python scripts/calibration_report.py
 ```
 
-Generated outputs are stored under `evaluation_results/`:
-- comparative metrics
-- per-model reports
-- confusion matrices
-- SHAP/LIME artifacts (when available)
+Artifacts are written under `evaluation_results/`.
 
----
+## Validation
 
-## Constraints
+```powershell
+pytest -q tests
+python -m compileall app.py api.py inference.py main.py scripts models tests data_generation
+```
 
-This repository is an educational triage prototype and is **not** a diagnostic medical device.  
-Clinical decisions must not be based solely on model output.
-Additional context is documented in `MODEL_CARD.md`.
+CI configuration: `.github/workflows/ci.yml`
+
+## Operational Notes
+
+- No Docker is required.
+- Large model binaries may exceed GitHub size limits; retrain locally using `python main.py` if needed.
+- This is a triage-oriented educational system, not a clinical diagnostic device.

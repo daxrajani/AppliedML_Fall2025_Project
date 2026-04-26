@@ -8,7 +8,7 @@ fastapi>=0.110
 uvicorn>=0.29
 pytest>=8.0
 
-# Evaluation and interpretability scripts (scripts/evaluation.py)
+# Evaluation and interpretability
 matplotlib>=3.7
 seaborn>=0.13
 shap>=0.44

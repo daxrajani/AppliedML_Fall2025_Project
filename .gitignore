@@ -13,3 +13,6 @@ Thumbs.db
 evaluation_results/confusion_matrices/*.png
 evaluation_results/interpretability/*.png
 evaluation_results/interpretability/*.html
+evaluation_results/calibration/*
+Prototype_augmented.csv
+saved_models_main/model_manifest.json

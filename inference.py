@@ -1,5 +1,6 @@
 from __future__ import annotations
 
+import json
 from pathlib import Path
 from typing import Dict, List
 
@@ -7,17 +8,28 @@ import joblib
 import pandas as pd
 
 MODEL_PATH = Path("saved_models_main") / "voting_clf.pkl"
+MANIFEST_PATH = Path("saved_models_main") / "model_manifest.json"
 SYMPTOMS_FILE = Path("available_symptoms.txt")
 DISEASES_FILE = Path("disease_names.txt")
 
 MIN_SYMPTOMS = 3
 INCONCLUSIVE_THRESHOLD = 0.45
+TOP2_MARGIN_THRESHOLD = 0.08
 
 
 def _read_lines(file_path: Path) -> List[str]:
     if not file_path.exists():
         return []
     return [line.strip() for line in file_path.read_text(encoding="utf-8").splitlines() if line.strip()]
+
+
+def _read_manifest() -> Dict[str, object]:
+    if not MANIFEST_PATH.exists():
+        return {}
+    try:
+        return json.loads(MANIFEST_PATH.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return {}
 
 
 def load_resources() -> Dict[str, object]:
@@ -27,6 +39,7 @@ def load_resources() -> Dict[str, object]:
     model = joblib.load(MODEL_PATH)
     disease_names = _read_lines(DISEASES_FILE)
     symptom_file_list = _read_lines(SYMPTOMS_FILE)
+    manifest = _read_manifest()
 
     if hasattr(model, "feature_names_in_"):
         feature_names = list(model.feature_names_in_)
@@ -51,6 +64,14 @@ def load_resources() -> Dict[str, object]:
         "disease_names": disease_names,
         "symptom_file_list": symptom_file_list,
         "symptom_synonyms": synonyms,
+        "manifest": manifest,
+        "model_version": manifest.get("model_version", "unknown"),
+        "confidence_threshold": float(
+            manifest.get("confidence_threshold", INCONCLUSIVE_THRESHOLD)
+        ),
+        "top2_margin_threshold": float(
+            manifest.get("top2_margin_threshold", TOP2_MARGIN_THRESHOLD)
+        ),
     }
 
 
@@ -69,6 +90,8 @@ def predict_from_symptoms(
     symptom_synonyms: Dict[str, str] | None = None,
     min_symptoms: int = MIN_SYMPTOMS,
     inconclusive_threshold: float = INCONCLUSIVE_THRESHOLD,
+    top2_margin_threshold: float = TOP2_MARGIN_THRESHOLD,
+    model_version: str = "unknown",
 ) -> Dict[str, object]:
     normalized = [normalize_symptom(symptom, symptom_synonyms) for symptom in symptoms if symptom and symptom.strip()]
     normalized = [symptom for symptom in normalized if symptom]
@@ -97,6 +120,9 @@ def predict_from_symptoms(
             "predicted_disease": None,
             "confidence": 0.0,
             "is_inconclusive": True,
+            "requires_clinician_review": True,
+            "escalation_reason": "insufficient_symptoms",
+            "model_version": model_version,
         }
 
     input_vector = [1 if feature in unique_valid_symptoms else 0 for feature in feature_names]
@@ -112,7 +138,17 @@ def predict_from_symptoms(
     ]
 
     best = top_predictions[0]
+    top2_margin = max(0.0, top_predictions[0]["confidence"] - top_predictions[1]["confidence"])
     is_inconclusive = best["confidence"] < inconclusive_threshold
+    requires_review = is_inconclusive or (top2_margin < top2_margin_threshold)
+
+    if best["confidence"] < inconclusive_threshold:
+        escalation_reason = "low_absolute_confidence"
+    elif top2_margin < top2_margin_threshold:
+        escalation_reason = "low_top2_margin"
+    else:
+        escalation_reason = "none"
+
     top3_total = sum(item["confidence"] for item in top_predictions) or 1.0
     normalized_top3_confidence = best["confidence"] / top3_total
 
@@ -132,7 +168,11 @@ def predict_from_symptoms(
         "top_predictions": top_predictions,
         "predicted_disease": best["disease"],
         "confidence": best["confidence"],
+        "top2_margin": top2_margin,
         "relative_confidence_top3": normalized_top3_confidence,
         "confidence_band": confidence_band,
         "is_inconclusive": is_inconclusive,
+        "requires_clinician_review": requires_review,
+        "escalation_reason": escalation_reason,
+        "model_version": model_version,
     }

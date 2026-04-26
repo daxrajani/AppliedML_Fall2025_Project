@@ -21,6 +21,7 @@ def test_predict_inconclusive_with_low_confidence():
 
     assert result["ok"] is True
     assert result["is_inconclusive"] is True
+    assert result["requires_clinician_review"] is True
     assert result["predicted_disease"] == "C"
 
 
@@ -49,3 +50,19 @@ def test_predict_handles_duplicates_and_ignored():
     assert result["ok"] is True
     assert result["selected_symptoms"] == ["itching", "skin_rash", "nodal_skin_eruptions"]
     assert "unknown_symptom" in result["ignored_symptoms"]
+
+
+def test_predict_escalates_on_small_top2_margin():
+    model = DummyModel([0.51, 0.49, 0.0])
+    result = predict_from_symptoms(
+        symptoms=["itching", "skin_rash", "nodal_skin_eruptions"],
+        model=model,
+        feature_names=["itching", "skin_rash", "nodal_skin_eruptions"],
+        disease_names=["A", "B", "C"],
+        inconclusive_threshold=0.40,
+        top2_margin_threshold=0.05,
+    )
+
+    assert result["ok"] is True
+    assert result["requires_clinician_review"] is True
+    assert result["escalation_reason"] == "low_top2_margin"
