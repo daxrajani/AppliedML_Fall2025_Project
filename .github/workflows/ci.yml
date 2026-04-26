@@ -11,10 +11,10 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
 
       - name: Setup Python
-        uses: actions/setup-python@v5
+        uses: actions/setup-python@v6
         with:
           python-version: "3.11"
 
@@ -25,7 +25,10 @@ jobs:
           pip install pytest
 
       - name: Run tests
-        run: pytest -q
+        env:
+          PYTEST_DISABLE_PLUGIN_AUTOLOAD: "1"
+          PYTHONPATH: .
+        run: pytest -q tests
 
       - name: Validate Python syntax
         run: python -m compileall app.py api.py inference.py main.py scripts models
