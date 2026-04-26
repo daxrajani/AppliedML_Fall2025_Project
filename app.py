@@ -22,6 +22,7 @@ def local_css():
         .stApp {
             background: linear-gradient(180deg, #f8fbff 0%, #eef5ff 100%);
             background-attachment: fixed;
+            color: #1f2f46;
         }
 
         h1, h2, h3, h4 {
@@ -50,6 +51,12 @@ def local_css():
             padding: 1rem 1.2rem;
             box-shadow: 0 4px 12px rgba(36, 81, 255, 0.08);
             margin-bottom: 1rem;
+            user-select: none;
+        }
+
+        .result-card h4,
+        .result-card p {
+            color: #1c3555 !important;
         }
 
         .top-condition-row {
@@ -94,6 +101,24 @@ def local_css():
             margin-bottom: 1rem;
         }
 
+        [data-testid="stSidebar"] {
+            background: #1f2436 !important;
+        }
+
+        [data-testid="stSidebar"] h1,
+        [data-testid="stSidebar"] h2,
+        [data-testid="stSidebar"] h3,
+        [data-testid="stSidebar"] label,
+        [data-testid="stSidebar"] p,
+        [data-testid="stSidebar"] div {
+            color: #e6ecf7 !important;
+        }
+
+        [data-testid="stSidebar"] .stCaption,
+        [data-testid="stSidebar"] [data-testid="stCaptionContainer"] p {
+            color: #c6d2ea !important;
+        }
+
         .footer {
             margin-top: 2rem;
             padding-top: 1rem;
@@ -127,6 +152,34 @@ def local_css():
 
         .stInfo p, .stInfo div {
             color: #123a75 !important;
+        }
+
+        [data-testid="stMetric"] {
+            background: #ffffff;
+            border: 1px solid #dce6f6;
+            border-radius: 10px;
+            padding: 0.45rem 0.6rem;
+            user-select: none;
+        }
+
+        [data-testid="stMetricLabel"] p {
+            color: #3f567a !important;
+            font-weight: 600 !important;
+        }
+
+        [data-testid="stMetricValue"] div {
+            color: #0f2f58 !important;
+            font-weight: 700 !important;
+        }
+
+        .stCaption, [data-testid="stCaptionContainer"] p {
+            color: #3f567a !important;
+            font-weight: 600;
+        }
+
+        ::selection {
+            background: rgba(36, 81, 255, 0.15);
+            color: #0f2f58;
         }
 
         #MainMenu {visibility: hidden;}
